@@ -467,6 +467,7 @@
         <div id="admin-switch" class="switch"><div class="knob"></div></div>
       </div>
       <button id="user-manage-btn" class="btn ghost small hidden">사용자 관리</button>
+      <button id="holiday-manage-btn" class="btn ghost small hidden">공휴일 관리</button>
       <button id="logout-btn" class="btn ghost small">로그아웃</button>
     </div>
   </header>
@@ -665,6 +666,30 @@
   </div>
 </div>
 
+<!-- ===================== 공휴일 관리 모달 (관리자) ===================== -->
+<div id="holiday-modal" class="modal-overlay hidden">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <h2>공휴일 관리</h2>
+      <button class="modal-close" data-close-modal="holiday-modal">✕</button>
+    </div>
+    <div class="hint-msg">여기 등록된 날짜는 일정 조정("주말/공휴일 조정") 계산에 사용돼요. 설날·추석 등 음력 공휴일과 대체공휴일은 이미 2026~2027년까지 등록되어 있고, 그 이후 연도나 임시공휴일(선거일 등)은 매년 여기서 추가해주세요.</div>
+    <div id="holidays-list" class="users-list" style="max-height:320px; overflow-y:auto;"></div>
+    <h3 style="font-size:14px; margin:16px 0 10px;">공휴일 추가</h3>
+    <div class="row-2">
+      <div class="field">
+        <label for="new-holiday-date">날짜</label>
+        <input id="new-holiday-date" type="date" />
+      </div>
+      <div class="field">
+        <label for="new-holiday-name">이름</label>
+        <input id="new-holiday-name" type="text" placeholder="예) 임시공휴일" />
+      </div>
+    </div>
+    <button class="btn block" id="holiday-add-btn">공휴일 추가</button>
+  </div>
+</div>
+
 <div id="toast-root"></div>
 
 <script type="module">
@@ -698,6 +723,59 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 /* =========================================================================
+   대한민국 공휴일 데이터 (기본 제공, 관리자 모드에서 추가/삭제 가능)
+   - 대체공휴일까지 이미 반영된 "쉬는 날" 기준 날짜입니다.
+   - 2028년 이후 날짜는 매년 관리자가 공휴일 관리에서 추가해주세요.
+   ========================================================================= */
+const HOLIDAY_SEED = [
+  { date: "2026-01-01", name: "신정" },
+  { date: "2026-02-16", name: "설날 연휴" },
+  { date: "2026-02-17", name: "설날" },
+  { date: "2026-02-18", name: "설날 연휴" },
+  { date: "2026-03-01", name: "삼일절" },
+  { date: "2026-03-02", name: "대체공휴일(삼일절)" },
+  { date: "2026-05-01", name: "근로자의날" },
+  { date: "2026-05-05", name: "어린이날" },
+  { date: "2026-05-24", name: "부처님오신날" },
+  { date: "2026-05-25", name: "대체공휴일(부처님오신날)" },
+  { date: "2026-06-03", name: "임시공휴일(지방선거)" },
+  { date: "2026-06-06", name: "현충일" },
+  { date: "2026-07-17", name: "제헌절" },
+  { date: "2026-08-15", name: "광복절" },
+  { date: "2026-08-17", name: "대체공휴일(광복절)" },
+  { date: "2026-09-24", name: "추석 연휴" },
+  { date: "2026-09-25", name: "추석" },
+  { date: "2026-09-26", name: "추석 연휴" },
+  { date: "2026-10-03", name: "개천절" },
+  { date: "2026-10-05", name: "대체공휴일(개천절)" },
+  { date: "2026-10-09", name: "한글날" },
+  { date: "2026-12-25", name: "크리스마스" },
+  { date: "2027-01-01", name: "신정" },
+  { date: "2027-02-06", name: "설날 연휴" },
+  { date: "2027-02-07", name: "설날" },
+  { date: "2027-02-08", name: "설날 연휴" },
+  { date: "2027-02-09", name: "대체공휴일(설날)" },
+  { date: "2027-03-01", name: "삼일절" },
+  { date: "2027-05-01", name: "근로자의날" },
+  { date: "2027-05-05", name: "어린이날" },
+  { date: "2027-05-13", name: "부처님오신날" },
+  { date: "2027-06-06", name: "현충일" },
+  { date: "2027-07-17", name: "제헌절" },
+  { date: "2027-07-19", name: "대체공휴일(제헌절)" },
+  { date: "2027-08-15", name: "광복절" },
+  { date: "2027-08-16", name: "대체공휴일(광복절)" },
+  { date: "2027-09-14", name: "추석 연휴" },
+  { date: "2027-09-15", name: "추석" },
+  { date: "2027-09-16", name: "추석 연휴" },
+  { date: "2027-10-03", name: "개천절" },
+  { date: "2027-10-04", name: "대체공휴일(개천절)" },
+  { date: "2027-10-09", name: "한글날" },
+  { date: "2027-10-11", name: "대체공휴일(한글날)" },
+  { date: "2027-12-25", name: "크리스마스" },
+  { date: "2027-12-27", name: "대체공휴일(크리스마스)" }
+];
+
+/* =========================================================================
    분류 정의
    ========================================================================= */
 const SUBCATS = {
@@ -722,6 +800,8 @@ let state = {
   user: null,        // firebase auth user
   profile: null,     // {username, role, active}
   tasks: [],
+  holidays: [],       // [{date:"YYYY-MM-DD", name}]
+  holidaySet: new Set(),
   currentTab: "finance",
   adminMode: false,
   selectedSituation: null,
@@ -804,13 +884,14 @@ onAuthStateChanged(auth, async (user)=>{
   $("#header-role").textContent = state.profile.role === "admin" ? "관리자" : "일반";
   $("#header-role").classList.toggle("staff", state.profile.role !== "admin");
   if(state.profile.role === "admin"){
-    show2("#admin-toggle-wrap"); show2("#user-manage-btn");
+    show2("#admin-toggle-wrap"); show2("#user-manage-btn"); show2("#holiday-manage-btn");
   }else{
-    hide2("#admin-toggle-wrap"); hide2("#user-manage-btn");
+    hide2("#admin-toggle-wrap"); hide2("#user-manage-btn"); hide2("#holiday-manage-btn");
     state.adminMode = false;
   }
   applyAdminModeUI();
   startTaskListener();
+  startHolidayListener();
   switchTab(state.currentTab);
 });
 
@@ -869,6 +950,45 @@ async function seedInitialTasks(){
 }
 
 /* =========================================================================
+   공휴일(holidays) 실시간 로드
+   ========================================================================= */
+let unsubHolidays = null;
+function startHolidayListener(){
+  if(unsubHolidays) unsubHolidays();
+  unsubHolidays = onSnapshot(doc(db, "settings", "holidays"), async (snap)=>{
+    if(!snap.exists()){
+      await setDoc(doc(db, "settings", "holidays"), { list: HOLIDAY_SEED, updatedAt: serverTimestamp() });
+      return;
+    }
+    state.holidays = (snap.data().list || []).slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+    state.holidaySet = new Set(state.holidays.map(h=> h.date));
+    renderCurrentTab();
+    if(!$("#holiday-modal").classList.contains("hidden")) renderHolidaysList();
+  });
+}
+
+function fmtDateKey(date){
+  const y = date.getFullYear(), m = String(date.getMonth()+1).padStart(2,'0'), d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function isWeekend(date){ const d = date.getDay(); return d===0 || d===6; }
+function isHoliday(date){ return state.holidaySet.has(fmtDateKey(date)); }
+function isNonBusinessDay(date){ return isWeekend(date) || isHoliday(date); }
+
+// mode: 'none' | 'before'(주말/공휴일이면 이전 영업일) | 'after'(주말/공휴일이면 다음 영업일)
+function adjustForHoliday(date, mode){
+  if(!mode || mode === 'none') return new Date(date);
+  const d = new Date(date);
+  const step = mode === 'before' ? -1 : 1;
+  let guard = 0;
+  while(isNonBusinessDay(d) && guard < 30){
+    d.setDate(d.getDate() + step);
+    guard++;
+  }
+  return d;
+}
+
+/* =========================================================================
    탭 전환
    ========================================================================= */
 $all(".tab-btn").forEach(btn=>{
@@ -892,7 +1012,7 @@ function renderCurrentTab(){
    재무/회계 렌더링 (+ 마감 타임라인)
    ========================================================================= */
 function nextOccurrences(schedule){
-  // schedule: [{month: 1-12|null, day: 1-31}]
+  // schedule: [{month: 1-12|null, day: 1-31, adjust: 'none'|'before'|'after'}]
   const today = new Date(); today.setHours(0,0,0,0);
   const results = [];
   (schedule||[]).forEach(s=>{
@@ -902,18 +1022,20 @@ function nextOccurrences(schedule){
       let m = s.month ? (s.month-1) : (today.getMonth()+offset);
       if(s.month){
         // 연간 반복: 올해 또는 내년
-        let candidate = new Date(y, m, s.day);
-        if(candidate < today) candidate = new Date(y+1, m, s.day);
-        results.push(candidate);
+        let raw = new Date(y, m, s.day);
+        if(adjustForHoliday(raw, s.adjust) < today) raw = new Date(y+1, m, s.day);
+        const adjusted = adjustForHoliday(raw, s.adjust);
+        results.push({ date: adjusted, raw, adjusted: adjusted.getTime() !== raw.getTime() });
         break;
       }else{
         // 매월 반복
-        const candidate = new Date(today.getFullYear(), today.getMonth()+offset, s.day);
-        if(candidate >= today){ results.push(candidate); break; }
+        const raw = new Date(today.getFullYear(), today.getMonth()+offset, s.day);
+        const adjusted = adjustForHoliday(raw, s.adjust);
+        if(adjusted >= today){ results.push({ date: adjusted, raw, adjusted: adjusted.getTime() !== raw.getTime() }); break; }
       }
     }
   });
-  return results.sort((a,b)=> a-b);
+  return results.sort((a,b)=> a.date - b.date);
 }
 
 function renderFinance(){
@@ -923,7 +1045,7 @@ function renderFinance(){
   const strip = $("#deadline-strip");
   let items = [];
   tasks.forEach(t=>{
-    nextOccurrences(t.schedule).forEach(date=> items.push({task:t, date}));
+    nextOccurrences(t.schedule).forEach(occ=> items.push({task:t, ...occ}));
   });
   items.sort((a,b)=> a.date - b.date);
   items = items.slice(0, 10);
@@ -938,7 +1060,7 @@ function renderFinance(){
       return `<div class="dchip ${urgent?'urgent':''}" data-task-id="${it.task.id}">
         <div class="dday mono">${dday===0?'D-DAY':'D-'+dday}</div>
         <div class="ddate mono">${dateStr}</div>
-        <div class="dtitle">${escapeHtml(it.task.title)}</div>
+        <div class="dtitle">${escapeHtml(it.task.title)}${it.adjusted ? ' <span class="badge">휴일조정</span>' : ''}</div>
       </div>`;
     }).join("");
     strip.querySelectorAll("[data-task-id]").forEach(el=>{
@@ -1066,8 +1188,10 @@ function openTaskModal(taskId){
   const occ = nextOccurrences(t.schedule);
   if(occ.length){
     const today = new Date(); today.setHours(0,0,0,0);
-    const dday = Math.round((occ[0]-today)/86400000);
-    $("#task-modal-schedule").innerHTML = `<div class="modal-schedule">다음 마감: ${occ[0].getMonth()+1}월 ${occ[0].getDate()}일 (${dday===0?'D-DAY':'D-'+dday}) ${t.scheduleNote ? '· '+escapeHtml(t.scheduleNote) : ''}</div>`;
+    const next = occ[0];
+    const dday = Math.round((next.date-today)/86400000);
+    const adjustedNote = next.adjusted ? ` <span style="color:var(--ink-faint);">(원래 ${next.raw.getMonth()+1}월 ${next.raw.getDate()}일 → 휴일 조정)</span>` : '';
+    $("#task-modal-schedule").innerHTML = `<div class="modal-schedule">다음 마감: ${next.date.getMonth()+1}월 ${next.date.getDate()}일 (${dday===0?'D-DAY':'D-'+dday})${adjustedNote} ${t.scheduleNote ? '· '+escapeHtml(t.scheduleNote) : ''}</div>`;
   }else if(t.scheduleNote){
     $("#task-modal-schedule").innerHTML = `<div class="modal-schedule">${escapeHtml(t.scheduleNote)}</div>`;
   }else{
@@ -1150,18 +1274,29 @@ $("#edit-cancel").addEventListener("click", ()=> hide("edit-modal"));
 function renderScheduleRows(schedule){
   const wrap = $("#edit-schedule-rows");
   wrap.innerHTML = "";
-  (schedule.length ? schedule : []).forEach(s=> addScheduleRow(s.month, s.day));
+  (schedule.length ? schedule : []).forEach(s=> addScheduleRow(s.month, s.day, s.adjust));
 }
-function addScheduleRow(month=null, day=""){
+function defaultAdjustFor(subCategory){
+  if(["급여", "도급료청구"].includes(subCategory)) return "before";
+  if(["세금신고납부", "보험/원천세 납부"].includes(subCategory)) return "after";
+  return "none";
+}
+function addScheduleRow(month=null, day="", adjust=null){
   const wrap = $("#edit-schedule-rows");
+  const resolvedAdjust = adjust || defaultAdjustFor($("#edit-subcategory").value);
   const row = document.createElement("div");
   row.className = "schedule-date-row";
   row.innerHTML = `
-    <select class="sched-month" style="max-width:110px; padding:8px; border:1.5px solid var(--border); border-radius:6px;">
+    <select class="sched-month" style="max-width:100px; padding:8px; border:1.5px solid var(--border); border-radius:6px;">
       <option value="">매월</option>
       ${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${month===m?'selected':''}>${m}월(연1회)</option>`).join("")}
     </select>
-    <input type="number" min="1" max="31" class="sched-day" placeholder="일" value="${day}" style="max-width:80px;" />
+    <input type="number" min="1" max="31" class="sched-day" placeholder="일" value="${day}" style="max-width:70px;" />
+    <select class="sched-adjust" style="max-width:150px; padding:8px; border:1.5px solid var(--border); border-radius:6px;">
+      <option value="none" ${resolvedAdjust==="none"?"selected":""}>주말/공휴일 조정 안 함</option>
+      <option value="before" ${resolvedAdjust==="before"?"selected":""}>이전 영업일로 (급여 등)</option>
+      <option value="after" ${resolvedAdjust==="after"?"selected":""}>다음 영업일로 (세금 등)</option>
+    </select>
     <button type="button" class="rm-x">✕</button>`;
   row.querySelector(".rm-x").addEventListener("click", ()=> row.remove());
   wrap.appendChild(row);
@@ -1203,7 +1338,8 @@ $("#edit-save").addEventListener("click", async ()=>{
   $all("#edit-schedule-rows .schedule-date-row").forEach(row=>{
     const m = row.querySelector(".sched-month").value;
     const d = row.querySelector(".sched-day").value;
-    if(d) schedule.push({ month: m ? Number(m) : null, day: Number(d) });
+    const adj = row.querySelector(".sched-adjust").value;
+    if(d) schedule.push({ month: m ? Number(m) : null, day: Number(d), adjust: adj });
   });
 
   const payload = {
@@ -1295,6 +1431,48 @@ $("#user-add-btn").addEventListener("click", async ()=>{
   }
   await deleteApp(secondary);
   $("#user-add-btn").disabled = false;
+});
+
+/* =========================================================================
+   공휴일 관리 (관리자)
+   ========================================================================= */
+$("#holiday-manage-btn").addEventListener("click", ()=>{
+  renderHolidaysList();
+  show("holiday-modal");
+});
+
+function renderHolidaysList(){
+  const wrap = $("#holidays-list");
+  if(!state.holidays.length){
+    wrap.innerHTML = `<div class="empty-state">등록된 공휴일이 없어요.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.holidays.map((h,i)=>`
+    <div class="user-row">
+      <div>
+        <div class="uname mono">${h.date}</div>
+        <div class="urole">${escapeHtml(h.name)}</div>
+      </div>
+      <button class="btn ghost small danger" data-rm-holiday="${i}">삭제</button>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-rm-holiday]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const idx = Number(btn.dataset.rmHoliday);
+      const next = state.holidays.slice();
+      next.splice(idx, 1);
+      await updateDoc(doc(db, "settings", "holidays"), { list: next, updatedAt: serverTimestamp() });
+    });
+  });
+}
+
+$("#holiday-add-btn").addEventListener("click", async ()=>{
+  const date = $("#new-holiday-date").value;
+  const name = $("#new-holiday-name").value.trim();
+  if(!date || !name){ toast("날짜와 이름을 모두 입력해주세요."); return; }
+  const next = state.holidays.concat([{ date, name }]);
+  await updateDoc(doc(db, "settings", "holidays"), { list: next, updatedAt: serverTimestamp() });
+  $("#new-holiday-date").value = ""; $("#new-holiday-name").value = "";
+  toast("공휴일을 추가했어요.");
 });
 
 /* =========================================================================
