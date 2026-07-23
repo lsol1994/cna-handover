@@ -196,7 +196,6 @@
     border-radius:4px;
     letter-spacing:0.05em;
   }
-  .brand .stamp.editable{ cursor:pointer; box-shadow:0 0 0 2px var(--gen) inset; }
   .brand h1{ font-size:18px; margin:0; }
 
   nav.tabs{ display:flex; gap:6px; flex-wrap:wrap; }
@@ -508,7 +507,8 @@
   <header class="app-header">
     <div class="header-row">
       <div class="brand">
-        <span class="stamp" id="brand-stamp" title="관리자는 클릭해서 회사명 변경 가능">씨앤에이</span>
+        <span class="stamp" id="brand-stamp">씨앤에이</span>
+        <button id="company-edit-btn" class="admin-only hidden" title="회사명 수정" style="background:none; border:1px solid var(--border); border-radius:5px; font-size:11px; padding:2px 6px; cursor:pointer; color:var(--ink-soft);">✎</button>
         <h1 class="serif">업무인수인계</h1>
       </div>
       <nav class="tabs">
@@ -695,6 +695,7 @@
       </div>
       <button type="button" class="btn ghost small" id="edit-form-add" style="margin-top:8px;">+ 첨부 추가</button>
       <div style="font-size:11.5px; color:var(--ink-faint); margin-top:6px;">구글드라이브에서 "링크가 있는 모든 사용자"로 공유한 링크, 또는 GitHub 저장소에 올린 파일의 raw 링크를 붙여넣으세요.</div>
+      <div style="font-size:11.5px; color:var(--fin); margin-top:4px; font-weight:600;">⚠ "+ 첨부 추가"는 이 창 안에서만 목록에 담아두는 것이고, 화면 맨 아래 <b>"저장"</b> 버튼을 눌러야 실제로 저장돼요.</div>
     </div>
 
     <div class="modal-footer">
@@ -781,6 +782,24 @@
     <div class="modal-footer">
       <button class="btn ghost" id="import-cancel">취소</button>
       <button class="btn" id="import-run-btn">선택 항목 가져오기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 회사명 수정 모달 (관리자) ===================== -->
+<div id="company-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>회사명 수정</h2>
+      <button class="modal-close" data-close-modal="company-modal">✕</button>
+    </div>
+    <div class="field">
+      <label for="company-name-input">회사명</label>
+      <input id="company-name-input" type="text" placeholder="예) 씨앤에이" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn ghost" id="company-cancel">취소</button>
+      <button class="btn" id="company-save">저장</button>
     </div>
   </div>
 </div>
@@ -1009,7 +1028,6 @@ $("#admin-switch").addEventListener("click", ()=>{
   applyAdminModeUI();
 });
 function applyAdminModeUI(){
-  $("#brand-stamp").classList.toggle("editable", state.adminMode);
   $("#admin-switch").classList.toggle("on", state.adminMode);
   $all(".admin-only").forEach(el=> el.classList.toggle("hidden", !state.adminMode));
   renderCurrentTab();
@@ -1089,14 +1107,18 @@ function startGeneralSettingsListener(){
   });
 }
 
-$("#brand-stamp").addEventListener("click", async ()=>{
-  if(!state.adminMode) return;
-  const val = prompt("회사명을 입력하세요", state.companyName || "");
-  if(val === null) return;
-  const trimmed = val.trim();
-  if(!trimmed) return;
+$("#company-edit-btn").addEventListener("click", ()=>{
+  $("#company-name-input").value = state.companyName || "";
+  show("company-modal");
+});
+$("#company-cancel").addEventListener("click", ()=> hide("company-modal"));
+$("#company-save").addEventListener("click", async ()=>{
+  const val = $("#company-name-input").value.trim();
+  if(!val){ toast("회사명을 입력해주세요."); return; }
   try{
-    await setDoc(doc(db, "settings", "general"), { companyName: trimmed, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(doc(db, "settings", "general"), { companyName: val, updatedAt: serverTimestamp() }, { merge: true });
+    hide("company-modal");
+    toast("회사명을 변경했어요.");
   }catch(err){
     toast("변경 실패: " + err.message);
   }
@@ -1717,6 +1739,7 @@ $("#edit-form-add").addEventListener("click", ()=>{
   renderEditFormsList();
   $("#edit-form-name").value = "";
   $("#edit-form-url").value = "";
+  toast("목록에 담았어요 — 아래 '저장' 버튼을 눌러야 최종 저장돼요.");
 });
 
 $("#edit-save").addEventListener("click", async ()=>{
