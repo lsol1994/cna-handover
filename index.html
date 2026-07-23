@@ -196,6 +196,7 @@
     border-radius:4px;
     letter-spacing:0.05em;
   }
+  .brand .stamp.editable{ cursor:pointer; box-shadow:0 0 0 2px var(--gen) inset; }
   .brand h1{ font-size:18px; margin:0; }
 
   nav.tabs{ display:flex; gap:6px; flex-wrap:wrap; }
@@ -507,7 +508,7 @@
   <header class="app-header">
     <div class="header-row">
       <div class="brand">
-        <span class="stamp">C&amp;A CARE</span>
+        <span class="stamp" id="brand-stamp" title="관리자는 클릭해서 회사명 변경 가능">씨앤에이</span>
         <h1 class="serif">업무인수인계</h1>
       </div>
       <nav class="tabs">
@@ -908,7 +909,8 @@ let state = {
   editingFormsBuffer: [],
   selectedTaskIds: new Set(),
   calYear: new Date().getFullYear(),
-  calMonth: new Date().getMonth()
+  calMonth: new Date().getMonth(),
+  companyName: "씨앤에이"
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -994,6 +996,7 @@ onAuthStateChanged(auth, async (user)=>{
   applyAdminModeUI();
   startTaskListener();
   startHolidayListener();
+  startGeneralSettingsListener();
   switchTab(state.currentTab);
 });
 
@@ -1006,6 +1009,7 @@ $("#admin-switch").addEventListener("click", ()=>{
   applyAdminModeUI();
 });
 function applyAdminModeUI(){
+  $("#brand-stamp").classList.toggle("editable", state.adminMode);
   $("#admin-switch").classList.toggle("on", state.adminMode);
   $all(".admin-only").forEach(el=> el.classList.toggle("hidden", !state.adminMode));
   renderCurrentTab();
@@ -1068,6 +1072,35 @@ function startHolidayListener(){
     if(!$("#holiday-modal").classList.contains("hidden")) renderHolidaysList();
   });
 }
+
+/* =========================================================================
+   일반 사이트 설정 (회사명 등) 실시간 로드
+   ========================================================================= */
+let unsubGeneralSettings = null;
+function startGeneralSettingsListener(){
+  if(unsubGeneralSettings) unsubGeneralSettings();
+  unsubGeneralSettings = onSnapshot(doc(db, "settings", "general"), async (snap)=>{
+    if(!snap.exists()){
+      await setDoc(doc(db, "settings", "general"), { companyName: state.companyName, updatedAt: serverTimestamp() });
+      return;
+    }
+    state.companyName = snap.data().companyName || state.companyName;
+    $("#brand-stamp").textContent = state.companyName;
+  });
+}
+
+$("#brand-stamp").addEventListener("click", async ()=>{
+  if(!state.adminMode) return;
+  const val = prompt("회사명을 입력하세요", state.companyName || "");
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!trimmed) return;
+  try{
+    await setDoc(doc(db, "settings", "general"), { companyName: trimmed, updatedAt: serverTimestamp() }, { merge: true });
+  }catch(err){
+    toast("변경 실패: " + err.message);
+  }
+});
 
 function fmtDateKey(date){
   const y = date.getFullYear(), m = String(date.getMonth()+1).padStart(2,'0'), d = String(date.getDate()).padStart(2,'0');
@@ -1563,9 +1596,8 @@ function openTaskModal(taskId){
 $all('[data-close-modal]').forEach(btn=>{
   btn.addEventListener("click", ()=> hide(btn.dataset.closeModal));
 });
-$all(".modal-overlay").forEach(ov=>{
-  ov.addEventListener("click", (e)=>{ if(e.target === ov) ov.classList.add("hidden"); });
-});
+/* 모달 바깥(어두운 배경) 클릭으로는 닫히지 않도록 함 - 입력 중 실수로 닫히는 것 방지.
+   닫으려면 ✕ 버튼이나 취소 버튼을 눌러야 함 */
 
 /* Ctrl+D(Cmd+D) 삭제 단축키: 업무 상세 모달이 열려있으면 그 업무 삭제, 아니면 체크된 업무 일괄삭제 */
 document.addEventListener("keydown", (e)=>{
