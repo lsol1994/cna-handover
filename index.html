@@ -263,6 +263,47 @@
   .dchip.urgent .dday{ color:var(--danger); }
   .deadline-empty{ font-size:13px; color:var(--ink-faint); padding:10px 2px; }
 
+  /* ---------- 월별 캘린더 ---------- */
+  .cal-grid{
+    display:grid; grid-template-columns:repeat(7, 1fr); gap:5px;
+  }
+  .cal-dow{
+    text-align:center; font-size:11px; color:var(--ink-faint); font-weight:600; padding:4px 0;
+  }
+  .cal-cell{
+    min-height:74px; border:1px solid var(--border); border-radius:7px;
+    background:var(--card); padding:5px 5px 4px; display:flex; flex-direction:column; gap:3px;
+  }
+  .cal-cell.other-month{ background:transparent; border-color:transparent; }
+  .cal-cell.today{ border-color:var(--fin); background:var(--fin-bg); }
+  .cal-daynum{ font-size:11px; color:var(--ink-faint); font-family:'JetBrains Mono', monospace; }
+  .cal-cell.today .cal-daynum{ color:var(--fin); font-weight:700; }
+  .cal-item{
+    font-size:10.5px; background:var(--fin-bg); color:var(--fin); border-radius:4px;
+    padding:2px 5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .cal-item.urgent{ background:#FBEAEA; color:var(--danger); }
+  @media (max-width:640px){
+    .cal-cell{ min-height:54px; }
+    .cal-item{ font-size:9.5px; }
+  }
+
+  /* ---------- 가져오기 리뷰 표 ---------- */
+  .import-row{
+    display:flex; align-items:center; gap:6px; padding:7px 10px;
+    border-bottom:1px solid var(--border); font-size:12.5px;
+  }
+  .import-row.is-dup{ background:#F7F7F5; }
+  .import-row.is-unchecked{ opacity:0.5; }
+  .import-row input[type=text]{
+    flex:1; min-width:0; padding:5px 7px; border:1px solid var(--border); border-radius:5px; font-size:12.5px; font-family:inherit;
+  }
+  .import-row select{
+    padding:5px 4px; border:1px solid var(--border); border-radius:5px; font-size:11.5px; font-family:inherit; max-width:98px;
+  }
+  .import-row .imp-x{ background:none; border:none; color:var(--danger); font-size:15px; cursor:pointer; padding:2px 4px; flex:0 0 auto; }
+  .import-row .imp-dup-badge{ font-size:10px; color:var(--ink-faint); flex:0 0 auto; white-space:nowrap; }
+
   /* ---------- 상황 카드 (노무) ---------- */
   .situation-grid{
     display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px;
@@ -483,6 +524,17 @@
         </div>
       </div>
       <div id="deadline-strip" class="deadline-strip"></div>
+      <div id="finance-calendar-wrap" style="margin-bottom:24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <h3 style="font-size:14px; color:var(--ink-soft); margin:0;">월별 일정</h3>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button class="btn ghost small" id="cal-prev-btn">‹ 이전달</button>
+            <span id="cal-month-label" class="mono" style="font-size:13.5px; min-width:80px; text-align:center; display:inline-block;"></span>
+            <button class="btn ghost small" id="cal-next-btn">다음달 ›</button>
+          </div>
+        </div>
+        <div id="finance-calendar"></div>
+      </div>
       <div id="finance-groups"></div>
       <div class="add-task-row admin-only hidden">
         <button class="btn ghost small" data-add-task="finance">+ 재무/회계 업무 추가</button>
@@ -693,19 +745,25 @@
 
 <!-- ===================== 반복업무 일괄 가져오기 모달 (관리자) ===================== -->
 <div id="import-modal" class="modal-overlay hidden">
-  <div class="modal-box wide">
+  <div class="modal-box wide" style="max-width:840px;">
     <div class="modal-head">
       <h2>반복업무 가져오기</h2>
       <button class="modal-close" data-close-modal="import-modal">✕</button>
     </div>
-    <div class="hint-msg">지난 스케줄 기록을 분석해 2회 이상 반복된 업무 <span id="import-total-count" class="mono"></span>건을 업무 항목으로 추가합니다. 재무/회계·노무·총무에 명확히 속하지 않는 항목(간병 서비스 운영, 일반 잡무 등)은 이미 제외되어 있어요.</div>
-    <div id="import-summary" style="display:flex; gap:10px; margin:14px 0; flex-wrap:wrap;"></div>
-    <div class="hint-msg">일부 업무는 로그 간격을 분석해 <b>매월/연1회 마감일이 자동으로 채워져</b> 있어요(격월·분기 반복은 사이트가 아직 자동 일정으로 지원하지 않아 비고에만 남겨뒀어요). 모두 "확인 후 확정" 표시가 되어 있으니 실제 업무와 다르면 나중에 수정해주세요.</div>
-    <div class="hint-msg" style="color:var(--danger); border-color:#E8BFBF; background:#FBEAEA;">이미 가져오기를 실행한 적이 있다면, 다시 실행 시 같은 업무가 중복으로 추가돼요. 한 번만 실행해주세요.</div>
+    <div class="hint-msg">지난 스케줄 기록을 분석해 2회 이상 반복된 업무를 목록으로 보여드려요. 이미 사이트에 같은 이름의 업무가 있으면 자동으로 체크 해제됩니다. 필요 없는 항목은 체크를 풀거나 <b>✕</b>로 완전히 제외하고, 분류/이름도 바로 수정할 수 있어요.</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin:10px 0;">
+      <div id="import-summary" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn ghost small" id="import-select-all">전체 선택</button>
+        <button class="btn ghost small" id="import-select-none">전체 해제</button>
+      </div>
+    </div>
+    <div id="import-table-wrap" style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;"></div>
+    <div class="hint-msg" style="margin-top:12px;">일부 업무는 로그 간격을 분석해 <b>매월/연1회 마감일이 자동으로 채워져</b> 있어요(격월·분기 반복은 사이트가 아직 자동 일정으로 지원하지 않아 비고에만 남겨뒀어요). 실제 업무와 다르면 가져온 뒤 수정해주세요.</div>
     <div id="import-progress" style="font-size:13px; color:var(--ink-soft); margin:10px 0;"></div>
     <div class="modal-footer">
       <button class="btn ghost" id="import-cancel">취소</button>
-      <button class="btn" id="import-run-btn">가져오기 실행</button>
+      <button class="btn" id="import-run-btn">선택 항목 가져오기</button>
     </div>
   </div>
 </div>
@@ -831,7 +889,10 @@ let state = {
   adminMode: false,
   selectedSituation: null,
   selectedGenCat: null,
-  editingFormsBuffer: []
+  editingFormsBuffer: [],
+  selectedTaskIds: new Set(),
+  calYear: new Date().getFullYear(),
+  calMonth: new Date().getMonth()
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -1100,6 +1161,85 @@ function renderFinance(){
     return renderGroupBlock(sub, list, "finance");
   }).join("");
   attachTaskCardEvents(wrap);
+
+  renderFinanceCalendar();
+}
+
+/* =========================================================================
+   월별 캘린더 (재무/회계)
+   ========================================================================= */
+function occurrencesForMonth(year, month){
+  // month: 0-11
+  const results = [];
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month+1, 0);
+  const tasks = state.tasks.filter(t=> t.category === "finance");
+  tasks.forEach(t=>{
+    (t.schedule||[]).forEach(s=>{
+      if(!s || !s.day) return;
+      for(let dOff=-1; dOff<=1; dOff++){
+        const raw = new Date(year, month+dOff, s.day);
+        if(s.month && raw.getMonth()+1 !== s.month) continue;
+        const adjusted = adjustForHoliday(raw, s.adjust);
+        if(adjusted >= monthStart && adjusted <= monthEnd){
+          results.push({ task:t, date: adjusted, raw, adjusted: adjusted.getTime() !== raw.getTime() });
+        }
+      }
+    });
+  });
+  results.sort((a,b)=> a.date - b.date);
+  return results;
+}
+
+$("#cal-prev-btn").addEventListener("click", ()=>{
+  state.calMonth -= 1;
+  if(state.calMonth < 0){ state.calMonth = 11; state.calYear -= 1; }
+  renderFinanceCalendar();
+});
+$("#cal-next-btn").addEventListener("click", ()=>{
+  state.calMonth += 1;
+  if(state.calMonth > 11){ state.calMonth = 0; state.calYear += 1; }
+  renderFinanceCalendar();
+});
+
+function renderFinanceCalendar(){
+  if(state.currentTab !== "finance") return;
+  const y = state.calYear, m = state.calMonth;
+  $("#cal-month-label").textContent = `${y}년 ${m+1}월`;
+
+  const occ = occurrencesForMonth(y, m);
+  const byDay = {};
+  occ.forEach(o=>{
+    const key = o.date.getDate();
+    (byDay[key] = byDay[key] || []).push(o);
+  });
+
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isCurrentMonth = today.getFullYear()===y && today.getMonth()===m;
+
+  const dows = ["일","월","화","수","목","금","토"];
+  let html = dows.map(d=> `<div class="cal-dow">${d}</div>`).join("");
+
+  for(let i=0; i<firstDow; i++) html += `<div class="cal-cell other-month"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const isToday = isCurrentMonth && today.getDate()===d;
+    const dayItems = (byDay[d]||[]);
+    html += `<div class="cal-cell ${isToday?'today':''}">
+      <div class="cal-daynum">${d}</div>
+      ${dayItems.map(it=>{
+        const dday = Math.round((it.date-today)/86400000);
+        const urgent = dday>=0 && dday<=3;
+        return `<div class="cal-item ${urgent?'urgent':''}" data-task-id="${it.task.id}" title="${escapeHtml(it.task.title)}">${escapeHtml(it.task.title)}</div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  $("#finance-calendar").innerHTML = `<div class="cal-grid">${html}</div>`;
+  $("#finance-calendar").querySelectorAll("[data-task-id]").forEach(el=>{
+    el.addEventListener("click", ()=> openTaskModal(el.dataset.taskId));
+  });
 }
 
 function renderGroupBlock(subLabel, list, cat){
@@ -1119,11 +1259,15 @@ function taskCardHtml(t){
   const meta = [];
   if(t.scheduleNote) meta.push(escapeHtml(t.scheduleNote));
   if(formCount) meta.push(`첨부양식 ${formCount}개`);
+  const checked = state.selectedTaskIds.has(t.id) ? "checked" : "";
   return `
     <div class="task-card" data-task-id="${t.id}">
-      <div class="t-main">
-        <div class="t-title">${escapeHtml(t.title)}</div>
-        ${meta.length ? `<div class="t-meta">${meta.join(" · ")}</div>` : ""}
+      <div class="t-main" style="display:flex; align-items:flex-start; gap:10px;">
+        <input type="checkbox" class="task-select-cb admin-only ${state.adminMode?'':'hidden'}" data-select-id="${t.id}" ${checked} style="margin-top:3px;" />
+        <div>
+          <div class="t-title">${escapeHtml(t.title)}</div>
+          ${meta.length ? `<div class="t-meta">${meta.join(" · ")}</div>` : ""}
+        </div>
       </div>
       <div class="t-actions">
         <span class="badge">자세히 &rarr;</span>
@@ -1133,8 +1277,57 @@ function taskCardHtml(t){
 
 function attachTaskCardEvents(container){
   container.querySelectorAll(".task-card").forEach(el=>{
-    el.addEventListener("click", ()=> openTaskModal(el.dataset.taskId));
+    el.addEventListener("click", (e)=>{
+      if(e.target.closest(".task-select-cb")) return;
+      openTaskModal(el.dataset.taskId);
+    });
   });
+  container.querySelectorAll(".task-select-cb").forEach(cb=>{
+    cb.addEventListener("click", (e)=> e.stopPropagation());
+    cb.addEventListener("change", (e)=>{
+      const id = cb.dataset.selectId;
+      if(cb.checked) state.selectedTaskIds.add(id);
+      else state.selectedTaskIds.delete(id);
+      renderBulkDeleteBar();
+    });
+  });
+}
+
+function renderBulkDeleteBar(){
+  let bar = $("#bulk-delete-bar");
+  const n = state.selectedTaskIds.size;
+  if(n === 0){
+    if(bar) bar.remove();
+    return;
+  }
+  if(!bar){
+    bar = document.createElement("div");
+    bar.id = "bulk-delete-bar";
+    bar.style.cssText = "position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:12px 16px; border-radius:10px; box-shadow:var(--shadow); z-index:150; display:flex; align-items:center; gap:12px; font-size:13.5px;";
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `
+    <span>${n}개 선택됨</span>
+    <button class="btn small danger" id="bulk-delete-run">삭제 (Ctrl+D)</button>
+    <button class="btn small ghost" id="bulk-delete-clear" style="color:#fff; border-color:rgba(255,255,255,0.4);">선택 해제</button>`;
+  $("#bulk-delete-run").addEventListener("click", runBulkDeleteSelected);
+  $("#bulk-delete-clear").addEventListener("click", ()=>{
+    state.selectedTaskIds.clear();
+    renderBulkDeleteBar();
+    renderCurrentTab();
+  });
+}
+
+async function runBulkDeleteSelected(){
+  const n = state.selectedTaskIds.size;
+  if(n === 0) return;
+  if(!confirm(`선택한 업무 ${n}개를 삭제할까요?`)) return;
+  for(const id of Array.from(state.selectedTaskIds)){
+    try{ await deleteDoc(doc(db, "tasks", id)); }catch(e){}
+  }
+  state.selectedTaskIds.clear();
+  renderBulkDeleteBar();
+  toast(`${n}개 삭제했어요.`);
 }
 
 /* =========================================================================
@@ -1245,6 +1438,20 @@ $all('[data-close-modal]').forEach(btn=>{
 });
 $all(".modal-overlay").forEach(ov=>{
   ov.addEventListener("click", (e)=>{ if(e.target === ov) ov.classList.add("hidden"); });
+});
+
+/* Ctrl+D(Cmd+D) 삭제 단축키: 업무 상세 모달이 열려있으면 그 업무 삭제, 아니면 체크된 업무 일괄삭제 */
+document.addEventListener("keydown", (e)=>{
+  if(!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "d") return;
+  if(!state.adminMode) return;
+  const taskModalOpen = !$("#task-modal").classList.contains("hidden");
+  if(taskModalOpen){
+    e.preventDefault();
+    $("#task-modal-delete").click();
+  }else if(state.selectedTaskIds.size > 0){
+    e.preventDefault();
+    runBulkDeleteSelected();
+  }
 });
 
 $("#task-modal-edit").addEventListener("click", ()=>{
@@ -1501,27 +1708,108 @@ $("#holiday-add-btn").addEventListener("click", async ()=>{
 });
 
 /* =========================================================================
-   반복업무 일괄 가져오기 (관리자)
+   반복업무 일괄 가져오기 (관리자) - 리뷰/수정/제외 가능
    ========================================================================= */
+let importItems = []; // 작업용 복사본: {_id, category, subCategory, title, manual, schedule, scheduleNote, selected, isDup}
+
 $("#bulk-import-btn").addEventListener("click", ()=>{
-  const byCat = { finance:0, labor:0, general:0 };
-  IMPORT_DATA.forEach(it=> byCat[it.category]++);
-  $("#import-total-count").textContent = `${IMPORT_DATA.length}`;
-  $("#import-summary").innerHTML = `
-    <span class="badge">재무/회계 ${byCat.finance}건</span>
-    <span class="badge">노무 ${byCat.labor}건</span>
-    <span class="badge">총무 ${byCat.general}건</span>`;
+  const existingTitles = new Set(state.tasks.map(t=> t.title));
+  importItems = IMPORT_DATA.map((it, i)=>{
+    const isDup = existingTitles.has(it.title);
+    return {
+      _id: "imp"+i,
+      category: it.category,
+      subCategory: it.subCategory,
+      title: it.title,
+      manual: it.manual || "",
+      schedule: it.schedule || [],
+      scheduleNote: it.scheduleNote || "",
+      selected: !isDup,
+      isDup
+    };
+  });
   $("#import-progress").textContent = "";
   $("#import-run-btn").disabled = false;
+  renderImportTable();
   show("import-modal");
 });
 $("#import-cancel").addEventListener("click", ()=> hide("import-modal"));
 
+function renderImportSummary(){
+  const active = importItems.filter(it=> it.selected);
+  const byCat = { finance:0, labor:0, general:0 };
+  active.forEach(it=> byCat[it.category]++);
+  const dupCount = importItems.filter(it=> it.isDup).length;
+  $("#import-summary").innerHTML = `
+    <span class="badge">선택됨 ${active.length}/${importItems.length}건</span>
+    <span class="badge">재무/회계 ${byCat.finance}</span>
+    <span class="badge">노무 ${byCat.labor}</span>
+    <span class="badge">총무 ${byCat.general}</span>
+    ${dupCount ? `<span class="badge">이미 등록됨 ${dupCount}건(자동 체크해제)</span>` : ""}`;
+}
+
+function renderImportTable(){
+  const wrap = $("#import-table-wrap");
+  wrap.innerHTML = importItems.map(it=>{
+    const subOptions = SUBCATS[it.category].map(s=> `<option value="${escapeHtml(s)}" ${s===it.subCategory?'selected':''}>${escapeHtml(s)}</option>`).join("");
+    return `
+      <div class="import-row ${it.isDup?'is-dup':''} ${it.selected?'':'is-unchecked'}" data-imp-id="${it._id}">
+        <input type="checkbox" class="imp-select" ${it.selected?'checked':''} />
+        <select class="imp-category">
+          <option value="finance" ${it.category==='finance'?'selected':''}>재무/회계</option>
+          <option value="labor" ${it.category==='labor'?'selected':''}>노무</option>
+          <option value="general" ${it.category==='general'?'selected':''}>총무</option>
+        </select>
+        <select class="imp-subcategory">${subOptions}</select>
+        <input type="text" class="imp-title" value="${escapeHtml(it.title)}" />
+        ${it.isDup ? `<span class="imp-dup-badge">이미 등록됨</span>` : ""}
+        <button type="button" class="imp-x" title="목록에서 제외">✕</button>
+      </div>`;
+  }).join("");
+  renderImportSummary();
+
+  wrap.querySelectorAll(".import-row").forEach(row=>{
+    const id = row.dataset.impId;
+    const item = importItems.find(x=> x._id === id);
+    row.querySelector(".imp-select").addEventListener("change", (e)=>{
+      item.selected = e.target.checked;
+      row.classList.toggle("is-unchecked", !item.selected);
+      renderImportSummary();
+    });
+    row.querySelector(".imp-category").addEventListener("change", (e)=>{
+      item.category = e.target.value;
+      item.subCategory = SUBCATS[item.category][0];
+      renderImportTable(); // 소분류 옵션이 바뀌므로 전체 다시 그림
+    });
+    row.querySelector(".imp-subcategory").addEventListener("change", (e)=>{
+      item.subCategory = e.target.value;
+    });
+    row.querySelector(".imp-title").addEventListener("change", (e)=>{
+      item.title = e.target.value.trim() || item.title;
+    });
+    row.querySelector(".imp-x").addEventListener("click", ()=>{
+      importItems = importItems.filter(x=> x._id !== id);
+      renderImportTable();
+    });
+  });
+}
+
+$("#import-select-all").addEventListener("click", ()=>{
+  importItems.forEach(it=> it.selected = true);
+  renderImportTable();
+});
+$("#import-select-none").addEventListener("click", ()=>{
+  importItems.forEach(it=> it.selected = false);
+  renderImportTable();
+});
+
 $("#import-run-btn").addEventListener("click", async ()=>{
+  const targets = importItems.filter(it=> it.selected);
+  if(targets.length === 0){ toast("선택된 항목이 없어요."); return; }
   $("#import-run-btn").disabled = true;
   let order = state.tasks.length;
   let done = 0;
-  for(const it of IMPORT_DATA){
+  for(const it of targets){
     order += 1;
     try{
       await addDoc(collection(db, "tasks"), {
@@ -1539,12 +1827,12 @@ $("#import-run-btn").addEventListener("click", async ()=>{
         updatedAt: serverTimestamp()
       });
     }catch(err){
-      $("#import-progress").textContent = `오류 발생 (${done}/${IMPORT_DATA.length}건 완료): ${err.message}`;
+      $("#import-progress").textContent = `오류 발생 (${done}/${targets.length}건 완료): ${err.message}`;
       $("#import-run-btn").disabled = false;
       return;
     }
     done++;
-    $("#import-progress").textContent = `가져오는 중... ${done}/${IMPORT_DATA.length}건`;
+    $("#import-progress").textContent = `가져오는 중... ${done}/${targets.length}건`;
   }
   $("#import-progress").textContent = `완료! ${done}건을 추가했어요.`;
   toast(`${done}건을 업무 항목으로 가져왔어요.`);
