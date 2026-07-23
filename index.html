@@ -505,6 +505,9 @@
 <!-- ===================== 메인 앱 ===================== -->
 <div id="app" class="hidden">
   <header class="app-header">
+    <div id="connection-banner" class="hidden" style="background:var(--danger); color:#fff; text-align:center; font-size:12.5px; padding:7px 12px;">
+      ⚠ 서버와 연결이 확인되지 않아요 — 지금 하는 변경사항이 저장되지 않고 있을 수 있어요. 인터넷 연결, 방화벽, 광고 차단 확장 프로그램을 확인해주세요.
+    </div>
     <div class="header-row">
       <div class="brand">
         <span class="stamp" id="brand-stamp">씨앤에이</span>
@@ -1048,16 +1051,37 @@ function applyAdminModeUI(){
    업무(tasks) 실시간 로드
    ========================================================================= */
 let unsubTasks = null;
+let offlineTimer = null;
+function updateConnectionStatus(fromCache){
+  if(fromCache){
+    if(!offlineTimer){
+      offlineTimer = setTimeout(()=>{
+        $("#connection-banner").classList.remove("hidden");
+        console.warn("Firestore: 서버로부터 응답이 없어 로컬 캐시 데이터만 표시 중입니다. 네트워크/방화벽/확장 프로그램을 확인하세요.");
+      }, 3000);
+    }
+  }else{
+    if(offlineTimer){ clearTimeout(offlineTimer); offlineTimer = null; }
+    $("#connection-banner").classList.add("hidden");
+  }
+}
+
 function startTaskListener(){
   if(unsubTasks) unsubTasks();
-  unsubTasks = onSnapshot(query(collection(db, "tasks"), orderBy("order", "asc")), async (snap)=>{
-    if(snap.empty){
-      await seedInitialTasks();
-      return;
+  unsubTasks = onSnapshot(
+    query(collection(db, "tasks"), orderBy("order", "asc")),
+    { includeMetadataChanges: true },
+    async (snap)=>{
+      updateConnectionStatus(snap.metadata.fromCache);
+      if(snap.empty){
+        if(snap.metadata.fromCache) return; // 오프라인 상태의 빈 캐시로 잘못 시딩하는 것 방지
+        await seedInitialTasks();
+        return;
+      }
+      state.tasks = snap.docs.map(d=> ({ id:d.id, ...d.data() }));
+      renderCurrentTab();
     }
-    state.tasks = snap.docs.map(d=> ({ id:d.id, ...d.data() }));
-    renderCurrentTab();
-  });
+  );
 }
 
 async function seedInitialTasks(){
