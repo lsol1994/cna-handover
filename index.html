@@ -946,6 +946,17 @@ function toast(msg){
   setTimeout(()=> el.remove(), 2600);
 }
 
+function toastError(msg, err){
+  if(err) console.error(msg, err);
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.style.background = "var(--danger)";
+  el.style.maxWidth = "min(90vw, 480px)";
+  el.textContent = "⚠ " + msg + (err ? ` (${err.message||err})` : "") + " — 자세한 내용은 브라우저 개발자도구(F12) 콘솔을 확인하세요.";
+  $("#toast-root").appendChild(el);
+  setTimeout(()=> el.remove(), 9000);
+}
+
 /* =========================================================================
    인증
    ========================================================================= */
@@ -1120,7 +1131,7 @@ $("#company-save").addEventListener("click", async ()=>{
     hide("company-modal");
     toast("회사명을 변경했어요.");
   }catch(err){
-    toast("변경 실패: " + err.message);
+    toastError("회사명 변경 실패", err);
   }
 });
 
@@ -1388,7 +1399,7 @@ function attachTaskCardEvents(container){
       try{
         await updateDoc(doc(db, "tasks", taskId), { situation: e.target.value, updatedAt: serverTimestamp() });
       }catch(err){
-        toast("변경 실패: " + err.message);
+        toastError("상황 변경 실패", err);
       }
     });
   });
@@ -1622,6 +1633,10 @@ $all('[data-close-modal]').forEach(btn=>{
    닫으려면 ✕ 버튼이나 취소 버튼을 눌러야 함 */
 
 /* Ctrl+D(Cmd+D) 삭제 단축키: 업무 상세 모달이 열려있으면 그 업무 삭제, 아니면 체크된 업무 일괄삭제 */
+window.addEventListener("unhandledrejection", (e)=>{
+  console.error("처리되지 않은 오류:", e.reason);
+});
+
 document.addEventListener("keydown", (e)=>{
   if(!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "d") return;
   if(!state.adminMode) return;
@@ -1780,7 +1795,7 @@ $("#edit-save").addEventListener("click", async ()=>{
     hide("edit-modal");
     toast("저장했어요.");
   }catch(err){
-    toast("저장 실패: " + err.message);
+    toastError("업무 저장 실패", err);
   }
 });
 
@@ -2020,6 +2035,7 @@ $("#import-run-btn").addEventListener("click", async ()=>{
         updatedAt: serverTimestamp()
       });
     }catch(err){
+      console.error("반복업무 가져오기 실패", err);
       $("#import-progress").textContent = `오류 발생 (${done}/${targets.length}건 완료): ${err.message}`;
       $("#import-run-btn").disabled = false;
       return;
