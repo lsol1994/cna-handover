@@ -365,6 +365,20 @@
   .task-card.dragging{ opacity:0.4; }
   .task-card.drag-over-top{ border-top:2.5px solid var(--ink); }
   .task-card.drag-over-bottom{ border-bottom:2.5px solid var(--ink); }
+
+  /* ---------- 보관 위치 배지 ---------- */
+  .storage-badge{
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11px; padding:2px 8px 2px 6px; border-radius:20px;
+    background:var(--paper); border:1px solid var(--border); color:var(--ink-soft);
+    white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis;
+  }
+  .storage-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .storage-block{
+    display:flex; align-items:center; gap:8px; font-size:13.5px;
+    background:var(--paper); border:1px solid var(--border); border-radius:8px;
+    padding:9px 12px; margin-bottom:14px;
+  }
   .badge{
     font-size:10.5px; padding:2px 8px; border-radius:20px;
     background:var(--paper); border:1px solid var(--border); color:var(--ink-soft);
@@ -530,6 +544,7 @@
       </div>
       <button id="user-manage-btn" class="btn ghost small hidden">사용자 관리</button>
       <button id="holiday-manage-btn" class="btn ghost small hidden">공휴일 관리</button>
+      <button id="storage-manage-btn" class="btn ghost small hidden">저장매체 관리</button>
       <button id="bulk-import-btn" class="btn ghost small hidden">반복업무 가져오기</button>
       <button id="logout-btn" class="btn ghost small">로그아웃</button>
     </div>
@@ -623,6 +638,7 @@
       <button class="modal-close" data-close-modal="task-modal">✕</button>
     </div>
     <div id="task-modal-schedule"></div>
+    <div id="task-modal-storage"></div>
     <div id="task-modal-manual" class="manual-block"></div>
     <div id="task-modal-checklist-wrap">
       <h3 style="font-size:13.5px; color:var(--ink-soft); margin:0 0 8px;">체크리스트</h3>
@@ -688,6 +704,17 @@
     <div class="field">
       <label for="edit-checklist">체크리스트 (한 줄에 하나씩)</label>
       <textarea id="edit-checklist" rows="4" placeholder="예)&#10;급여대장 확인&#10;4대보험 공제액 확인&#10;이체 실행"></textarea>
+    </div>
+
+    <div class="field">
+      <label>원본 문서 보관 위치 (외장하드 등)</label>
+      <div class="row-2">
+        <select id="edit-storage-device">
+          <option value="">선택 안 함</option>
+        </select>
+        <input id="edit-storage-path" type="text" placeholder="폴더/파일 경로 (예: 2026년/급여/1월)" />
+      </div>
+      <div style="font-size:11.5px; color:var(--ink-faint); margin-top:6px;">저장매체 목록은 헤더의 "저장매체 관리"에서 추가할 수 있어요.</div>
     </div>
 
     <div class="field">
@@ -808,6 +835,30 @@
   </div>
 </div>
 
+<!-- ===================== 저장매체 관리 모달 (관리자) ===================== -->
+<div id="storage-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>저장매체 관리</h2>
+      <button class="modal-close" data-close-modal="storage-modal">✕</button>
+    </div>
+    <div class="hint-msg">외장하드, NAS 등 실제 문서가 보관된 매체를 등록해두면, 업무 항목마다 어느 매체의 어느 경로에 있는지 색깔 배지로 표시돼요.</div>
+    <div id="storage-devices-list" class="users-list"></div>
+    <h3 style="font-size:14px; margin:16px 0 10px;">저장매체 추가</h3>
+    <div class="row-2">
+      <div class="field">
+        <label for="new-storage-name">매체 이름</label>
+        <input id="new-storage-name" type="text" placeholder="예) 외장하드 A(검정)" />
+      </div>
+      <div class="field">
+        <label for="new-storage-color">색상</label>
+        <input id="new-storage-color" type="color" value="#3E6B5C" style="width:100%; height:40px; padding:2px; border:1.5px solid var(--border); border-radius:7px;" />
+      </div>
+    </div>
+    <button class="btn block" id="storage-add-btn">저장매체 추가</button>
+  </div>
+</div>
+
 <div id="toast-root"></div>
 
 <script type="module">
@@ -823,7 +874,7 @@ import {
   createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
+  getFirestore, collection, doc, getDoc, getDocs, getDocFromServer, setDoc, addDoc, updateDoc,
   deleteDoc, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const firebaseConfig = {
@@ -933,7 +984,8 @@ let state = {
   selectedTaskIds: new Set(),
   calYear: new Date().getFullYear(),
   calMonth: new Date().getMonth(),
-  companyName: "씨앤에이"
+  companyName: "씨앤에이",
+  storageDevices: []
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -1016,21 +1068,23 @@ onAuthStateChanged(auth, async (user)=>{
   }
   state.user = user;
   state.profile = snap.data();
+  console.log("[디버그] Firebase 프로젝트:", firebaseConfig.projectId, "| 로그인 UID:", user.uid, "| username:", state.profile.username, "| role:", state.profile.role);
   hide("login-screen"); hide("bootstrap-screen");
   show("app");
   $("#header-username").textContent = state.profile.username || user.email.split("@")[0];
   $("#header-role").textContent = state.profile.role === "admin" ? "관리자" : "일반";
   $("#header-role").classList.toggle("staff", state.profile.role !== "admin");
   if(state.profile.role === "admin"){
-    show2("#admin-toggle-wrap"); show2("#user-manage-btn"); show2("#holiday-manage-btn"); show2("#bulk-import-btn");
+    show2("#admin-toggle-wrap"); show2("#user-manage-btn"); show2("#holiday-manage-btn"); show2("#storage-manage-btn"); show2("#bulk-import-btn");
   }else{
-    hide2("#admin-toggle-wrap"); hide2("#user-manage-btn"); hide2("#holiday-manage-btn"); hide2("#bulk-import-btn");
+    hide2("#admin-toggle-wrap"); hide2("#user-manage-btn"); hide2("#holiday-manage-btn"); hide2("#storage-manage-btn"); hide2("#bulk-import-btn");
     state.adminMode = false;
   }
   applyAdminModeUI();
   startTaskListener();
   startHolidayListener();
   startGeneralSettingsListener();
+  startStorageDevicesListener();
   switchTab(state.currentTab);
 });
 
@@ -1157,6 +1211,80 @@ $("#company-save").addEventListener("click", async ()=>{
     toast("회사명을 변경했어요.");
   }catch(err){
     toastError("회사명 변경 실패", err);
+  }
+});
+
+/* =========================================================================
+   저장매체(외장하드 등) 관리
+   ========================================================================= */
+let unsubStorageDevices = null;
+function startStorageDevicesListener(){
+  if(unsubStorageDevices) unsubStorageDevices();
+  unsubStorageDevices = onSnapshot(doc(db, "settings", "storageDevices"), async (snap)=>{
+    if(!snap.exists()){
+      await setDoc(doc(db, "settings", "storageDevices"), { list: [], updatedAt: serverTimestamp() });
+      return;
+    }
+    state.storageDevices = snap.data().list || [];
+    populateStorageDeviceSelect();
+    renderCurrentTab();
+    if(!$("#storage-modal").classList.contains("hidden")) renderStorageDevicesList();
+  });
+}
+
+function getStorageDevice(name){
+  return state.storageDevices.find(d=> d.name === name);
+}
+
+function populateStorageDeviceSelect(){
+  const sel = $("#edit-storage-device");
+  const current = sel.value;
+  sel.innerHTML = `<option value="">선택 안 함</option>` +
+    state.storageDevices.map(d=> `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`).join("");
+  if(current && getStorageDevice(current)) sel.value = current;
+}
+
+$("#storage-manage-btn").addEventListener("click", ()=>{
+  renderStorageDevicesList();
+  show("storage-modal");
+});
+
+function renderStorageDevicesList(){
+  const wrap = $("#storage-devices-list");
+  if(!state.storageDevices.length){
+    wrap.innerHTML = `<div class="empty-state">등록된 저장매체가 없어요.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.storageDevices.map((d,i)=>`
+    <div class="user-row">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="storage-dot" style="background:${d.color}; width:12px; height:12px;"></span>
+        <span class="uname">${escapeHtml(d.name)}</span>
+      </div>
+      <button class="btn ghost small danger" data-rm-storage="${i}">삭제</button>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-rm-storage]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const idx = Number(btn.dataset.rmStorage);
+      const next = state.storageDevices.slice();
+      next.splice(idx, 1);
+      await updateDoc(doc(db, "settings", "storageDevices"), { list: next, updatedAt: serverTimestamp() });
+    });
+  });
+}
+
+$("#storage-add-btn").addEventListener("click", async ()=>{
+  const name = $("#new-storage-name").value.trim();
+  const color = $("#new-storage-color").value;
+  if(!name){ toast("매체 이름을 입력해주세요."); return; }
+  if(state.storageDevices.some(d=> d.name === name)){ toast("이미 있는 이름이에요."); return; }
+  const next = state.storageDevices.concat([{ name, color }]);
+  try{
+    await updateDoc(doc(db, "settings", "storageDevices"), { list: next, updatedAt: serverTimestamp() });
+    $("#new-storage-name").value = "";
+    toast("저장매체를 추가했어요.");
+  }catch(err){
+    toastError("저장매체 추가 실패", err);
   }
 });
 
@@ -1372,6 +1500,11 @@ function taskCardHtml(t){
   if(t.scheduleNote) meta.push(escapeHtml(t.scheduleNote));
   if(formCount) meta.push(`첨부양식 ${formCount}개`);
   const checked = state.selectedTaskIds.has(t.id) ? "checked" : "";
+  const device = t.storageDevice ? getStorageDevice(t.storageDevice) : null;
+  const storageBadge = device ? `
+        <span class="storage-badge" title="${escapeHtml(device.name)}${t.storagePath ? ' · '+escapeHtml(t.storagePath) : ''}">
+          <span class="storage-dot" style="background:${device.color}"></span>${escapeHtml(device.name)}${t.storagePath ? ' · '+escapeHtml(t.storagePath) : ''}
+        </span>` : '';
   const situationQuickSelect = (t.category === "labor" && state.adminMode) ? `
         <select class="situation-quick-select" data-situation-task="${t.id}">
           <option value="공통" ${(!t.situation||t.situation==='공통')?'selected':''}>공통</option>
@@ -1390,6 +1523,7 @@ function taskCardHtml(t){
         <div>
           <div class="t-title">${escapeHtml(t.title)}</div>
           ${meta.length ? `<div class="t-meta">${meta.join(" · ")}</div>` : ""}
+          ${storageBadge ? `<div style="margin-top:5px;">${storageBadge}</div>` : ""}
         </div>
       </div>
       <div class="t-actions">
@@ -1634,6 +1768,16 @@ function openTaskModal(taskId){
     $("#task-modal-schedule").innerHTML = "";
   }
 
+  const device = t.storageDevice ? getStorageDevice(t.storageDevice) : null;
+  if(device){
+    $("#task-modal-storage").innerHTML = `<div class="storage-block">
+      <span class="storage-dot" style="width:12px; height:12px;background:${device.color}"></span>
+      <div><b>${escapeHtml(device.name)}</b>${t.storagePath ? ` <span style="color:var(--ink-soft);">· ${escapeHtml(t.storagePath)}</span>` : ''}</div>
+    </div>`;
+  }else{
+    $("#task-modal-storage").innerHTML = "";
+  }
+
   $("#task-modal-manual").textContent = t.manual || "등록된 업무 진행 방법이 아직 없어요.";
 
   const cl = t.checklist || [];
@@ -1713,6 +1857,10 @@ function openEditModal(task, category){
   $("#edit-manual").value = task ? (task.manual||"") : "";
   $("#edit-checklist").value = task ? (task.checklist||[]).join("\n") : "";
   $("#edit-schedule-note").value = task ? (task.scheduleNote||"") : "";
+
+  populateStorageDeviceSelect();
+  $("#edit-storage-device").value = task ? (task.storageDevice||"") : "";
+  $("#edit-storage-path").value = task ? (task.storagePath||"") : "";
 
   renderScheduleRows(task ? (task.schedule||[]) : []);
   renderEditFormsList();
@@ -1806,21 +1954,45 @@ $("#edit-save").addEventListener("click", async ()=>{
     schedule: category === "finance" ? schedule : [],
     scheduleNote: category === "finance" ? $("#edit-schedule-note").value.trim() : "",
     situation: category === "labor" ? $("#edit-situation").value : null,
+    storageDevice: $("#edit-storage-device").value,
+    storagePath: $("#edit-storage-path").value.trim(),
     updatedAt: serverTimestamp()
   };
 
   try{
+    let savedRef;
     if(id){
-      await updateDoc(doc(db,"tasks",id), payload);
+      savedRef = doc(db,"tasks",id);
+      await updateDoc(savedRef, payload);
     }else{
       payload.order = state.tasks.length + 1;
       payload.createdAt = serverTimestamp();
-      await addDoc(collection(db,"tasks"), payload);
+      savedRef = await addDoc(collection(db,"tasks"), payload);
     }
+
+    // 로컬 캐시가 아니라 실제 서버에 반영됐는지 강제로 재확인
+    $("#edit-save").disabled = true;
+    $("#edit-save").textContent = "서버 확인 중...";
+    try{
+      const serverSnap = await getDocFromServer(savedRef);
+      if(!serverSnap.exists() || serverSnap.data().title !== payload.title){
+        throw new Error("서버에 저장된 내용이 확인되지 않아요.");
+      }
+    }catch(verifyErr){
+      toastError("서버 저장 확인 실패 — 인터넷 연결이나 Firestore 보안 규칙을 확인해주세요", verifyErr);
+      $("#edit-save").disabled = false;
+      $("#edit-save").textContent = "저장";
+      return;
+    }
+    $("#edit-save").disabled = false;
+    $("#edit-save").textContent = "저장";
+
     hide("edit-modal");
-    toast("저장했어요.");
+    toast("저장했어요. (서버 확인 완료)");
   }catch(err){
     toastError("업무 저장 실패", err);
+    $("#edit-save").disabled = false;
+    $("#edit-save").textContent = "저장";
   }
 });
 
